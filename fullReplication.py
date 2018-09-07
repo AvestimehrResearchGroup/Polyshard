@@ -29,6 +29,7 @@ def fullReplication(numNodes, numShards, sizeShard, sparsity, numEpoches,
               each epoch.
         tUp: a vector of length numEpoch recording the chain logging time of
               each epoch.
+        fileName: the name of the pickle file that stores the above 3 results.
     '''
 
     # initialize the system
@@ -39,7 +40,7 @@ def fullReplication(numNodes, numShards, sizeShard, sparsity, numEpoches,
 
     # run the system
     for idxEpoch in range(numEpoches):
-        print("now processing epoch:", idxEpoch)
+        print("processing epoch:", idxEpoch)
         simEpoch(chains, tVer, tUp, tVote, numNodes, numShards,
                  sizeShard, sparsity, idxEpoch)
 
@@ -50,14 +51,11 @@ def fullReplication(numNodes, numShards, sizeShard, sparsity, numEpoches,
     result['updating time'] = tVote
     fileName = 'full_replication_N_' + str(numNodes) + '_K_' +\
                str(numShards) + '_M_' + str(sizeShard) + '_s_' +\
-               str(sparsity) + '_' + str(time.time()) + '.pickle'
+               str(sparsity) + '_' + str(int(time.time())) + '.pickle'
     with open(fileName, 'wb') as handle:
         pickle.dump(result, handle)
 
-    # plot the results
-    plots(result)
-
-    return tVer, tVote, tUp
+    return tVer, tVote, tUp, fileName
 
 
 def chainInit(numNodes, numShards, sizeShard, initBal, numEpoch):
@@ -232,13 +230,19 @@ def chainUpdate(chains, blocks, decisions):  # incomplete
         chains[i] = np.vstack([chains[i], blocks[i] * decisions[i]])
 
 
-def plots(result):
+def plots(fileName):
+    print(fileName)
+    with open(fileName, 'rb') as handle:
+        result = pickle.load(handle)
     for key in result.keys():
         plt.plot(range(len(result[key])), result[key] * 1000, label=key)
     plt.xlabel('Epoch index')
     plt.ylabel('Time (ms)')
     plt.grid()
     plt.legend(loc='best')
+    plt.title('Data source:\n' + fileName)
+    plt.xlim((0, None))
+    plt.ylim((0, None))
     plt.tight_layout()
     plt.show()
 
@@ -253,9 +257,9 @@ def uniTests():
 
     # test voting()
     opinions = np.matrix([[True, False, False],
-                         [True, True, True],
-                         [False, False, False],
-                         [True, True, False]])
+                          [True, True, True],
+                          [False, False, False],
+                          [True, True, False]])
     assert (voting(opinions) == [True, False, False]).all()
 
     # test chainUpdate()
@@ -270,13 +274,60 @@ def uniTests():
     print('All unit tests passed!')
 
 
-uniTests()
+def simpleSharding(numNodes, numShards, sizeShard, sparsity,
+                   numEpoches, initBal):
+    '''
+    This function simulates the verification, voting, and updating time of
+    block chain with simple sharding. In this system, each shard is repeated
+    by a cluster of numNodes / numShards times. The handling of the numShards
+    shards are independent of each otehr.
+
+    Simulation method:
+    In such a simple sharding system, each shard/cluster is indeed equivalently
+    to a small full replication system with numNodes / numShards nodes and
+    only one shard. Thus, it is sufficient to simulate simple sharding by
+    running small a full replication system numShards times.
+    Inputs:
+        see above
+    Outputs:
+        tVer: see above
+        tVote: see above
+        tUp: see above
+        fileName: see above
+    '''
+
+    # numNodes must be a multiple of numShards
+    assert numNodes % numShards == 0
+
+    # the number of nodes that repeats a shard.
+    numRep = int(numNodes / numShards)
+    tVer = []
+    tVote = []
+    tUp = []
+    for k in range(numShards):
+        print("processing shard:", str(k))
+        t1, t2, t3, _ = fullReplication(numNodes=numRep, numShards=1,
+                                        sizeShard=sizeShard, sparsity=sparsity,
+                                        numEpoches=numEpoches, initBal=initBal)
+
+        tVer.append(t1)
+        tVote.append(t2)
+        tUp.append(t3)
+
+    # each time at each epoch should be the maximum across all shards.
+    tVer = np.max(tVer, axis=0)
+    tVote = np.max(tVote, axis=0)
+    tUp = np.max(tUp, axis=0)
+    result = {}
+    result['verification time'] = tVer
+    result['voting time'] = tUp
+    result['updating time'] = tVote
+    fileName = 'simple_sharding_N_' + str(numNodes) + '_K_' +\
+               str(numShards) + '_M_' + str(sizeShard) + '_s_' +\
+               str(sparsity) + '_' + str(int(time.time())) + '.pickle'
+    with open(fileName, 'wb') as handle:
+        pickle.dump(result, handle)
+    return tVer, tVote, tUp, fileName
 
 
-numNodes = 100
-numShards = 20
-sizeShard = 100
-sparsity = 0.1
-numEpoches = 500
-initBal = 10000
-fullReplication(numNodes, numShards, sizeShard, sparsity, numEpoches, initBal)
+# uniTests()
