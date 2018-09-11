@@ -1,19 +1,33 @@
 import fullReplication as fr
+import polyShard as ps
+import time
 
 
-numNodes = 100
-numShards = 20
-sizeShard = 50
-sparsity = 0.1
-numEpoches = 500
-initBal = 10000
+numNodes = 10
+numShards = 5
+sizeShard = 1000
+sparsity = 0.01
+numEpoches = 1000
+initBal = 100
 
 # Run full replication
-_, _, _, fileName1 = fr.fullReplication(numNodes, numShards, sizeShard,
-                                        sparsity, numEpoches, initBal)
-fr.plots(fileName1)
+start = time.time()
+out1 = fr.fullReplication(numNodes, numShards, sizeShard,
+                          sparsity, numEpoches, initBal)
+print("FR: ", time.time() - start)
+fr.plots(out1[-1])
+
 
 # Run simple sharding
-_, _, _, fileName2 = fr.simpleSharding(numNodes, numShards, sizeShard,
-                                       sparsity, numEpoches, initBal)
-fr.plots(fileName2)
+start = time.time()
+out2 = fr.simpleSharding(numNodes, numShards, sizeShard,
+                         sparsity, numEpoches, initBal)
+print("SS: ", time.time() - start)
+fr.plots(out2[-1])
+
+# Run polynomial sharding
+start = time.time()
+out3 = ps.polyShard(numNodes, numShards, sizeShard, sparsity,
+                    numEpoches, initBal)
+print("PS: ", time.time() - start)
+fr.plots(out3[-1])

@@ -1,8 +1,13 @@
 # V2.1: corrected the saving of tVote and tUp for both FR and SS
 import numpy as np
+import scipy.sparse as ss
 import pickle
 import time
 import matplotlib.pyplot as plt
+
+
+def sparsify(x):
+    return ss.coo_matrix(x)
 
 
 def fullReplication(numNodes, numShards, sizeShard, sparsity, numEpoches,
@@ -57,7 +62,7 @@ def fullReplication(numNodes, numShards, sizeShard, sparsity, numEpoches,
     result['verification time'] = tVer
     result['voting time'] = tVote
     result['updating time'] = tUp
-    fileName = 'full_replication_N_' + str(numNodes) + '_K_' +\
+    fileName = 'full_replication_sparse_N_' + str(numNodes) + '_K_' +\
                str(numShards) + '_M_' + str(sizeShard) + '_s_' +\
                str(sparsity) + '_' + str(int(time.time())) + '.pickle'
     with open(fileName, 'wb') as handle:
@@ -85,9 +90,12 @@ def chainInit(numNodes, numShards, sizeShard, initBal, numEpoch):
                 we only create one. This is fine for simulation because all
                 the nodes maintain the same chains.
     '''
-    chain = np.zeros([2, sizeShard])
-    chain[1, :] = initBal  # the 0th + 1st row constitute a genesis block
-    chains = [np.copy(chain) for k in range(numShards)]
+    chains = []
+    for k in range(numShards):
+        chain = np.zeros([2, sizeShard])
+        chain[1, :] = initBal  # the 0th + 1st row constitute a genesis block
+        chain = sparsify(chain)
+        chains.append(chain)
     return chains
 
 
@@ -114,6 +122,7 @@ def simEpoch(chains, tVer, tUp, tVote, numNodes, numShards,
         tStart = time.time()
         opinions[n, :] = verifyByNode(chains, blocks, n)
         tPassed = time.time() - tStart
+        # print('outer time:', tPassed)
         # verification time across the nodes is the maximum of each node
         tVerification = np.max([tPassed, tVerification])
     tVer[idxEpoch] = tVerification
@@ -198,7 +207,7 @@ def verifyBlock(chain, block):
         a True/False decision
     '''
     balance = np.sum(chain, axis=0)
-    return (balance + block[0] >= 0).all()
+    return ((balance + block[0]) >= 0).all()
 
 
 def temperOpinion(opinion, n):
@@ -235,7 +244,11 @@ def chainUpdate(chains, blocks, decisions):  # incomplete
         None. It updates chains.
     '''
     for i in range(len(chains)):
-        chains[i] = np.vstack([chains[i], blocks[i] * decisions[i]])
+        chains[i] = ss.vstack([chains[i], sparsify(blocks[i] * decisions[i])])
+
+
+def sum(x):
+    return np.sum(np.sum(x != 0))
 
 
 def plots(fileName):
@@ -276,10 +289,10 @@ def uniTests():
     blocks = [np.matrix([[-1, -2, -3], [3, 2, 1]]) for i in range(2)]
     decisions = [True, False]
     chainUpdate(chains, blocks, decisions)
-    assert (chains[0][2, :] == [-1, -2, -3]).all()
-    assert (chains[0][3, :] == [3, 2, 1]).all()
-    assert (chains[1][2, :] == [0, 0, 0]).all()
-    assert (chains[1][3, :] == [0, 0, 0]).all()
+    assert (chains[0].todense()[2, :] == sparsify([-1, -2, -3])).all()
+    assert (chains[0].todense()[3, :] == [3, 2, 1]).all()
+    assert (chains[1].todense()[2, :] == [0, 0, 0]).all()
+    assert (chains[1].todense()[3, :] == [0, 0, 0]).all()
     print('All unit tests passed!')
 
 
@@ -331,7 +344,7 @@ def simpleSharding(numNodes, numShards, sizeShard, sparsity,
     result['verification time'] = tVer
     result['voting time'] = tVote
     result['updating time'] = tUp
-    fileName = 'simple_sharding_N_' + str(numNodes) + '_K_' +\
+    fileName = 'simple_sharding_sparse_N_' + str(numNodes) + '_K_' +\
                str(numShards) + '_M_' + str(sizeShard) + '_s_' +\
                str(sparsity) + '_' + str(int(time.time())) + '.pickle'
     with open(fileName, 'wb') as handle:
