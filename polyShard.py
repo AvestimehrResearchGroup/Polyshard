@@ -5,11 +5,11 @@ import time
 import fullReplication as fr
 
 
-def polyShard(numNodes, numShards, sizeShard, sparsity, numEpoches,
+def polyShard(numNodes, numShards, sizeShard, sparsity, numEpochs,
               initBal):
 
     # initialize system
-    chains = fr.chainInit(numNodes, numShards, sizeShard, initBal, numEpoches)
+    chains = fr.chainInit(numNodes, numShards, sizeShard, initBal, numEpochs)
     # Generate parameters for Lagrange coding
     beta = [x + 1 for x in range(numShards)]
     alpha = [x + 1 for x in range(numNodes)]
@@ -22,18 +22,26 @@ def polyShard(numNodes, numShards, sizeShard, sparsity, numEpoches,
     codedChains = codedInit(chains, coefficients, sizeShard,
                             numNodes, numShards)
 
-    tVer = np.zeros(numEpoches)
-    tUp = np.zeros(numEpoches)
+    tVer = np.zeros(numEpochs)
+    tUp = np.zeros(numEpochs)
     # time to encode incoming blocks before verification
-    tEn = np.zeros(numEpoches)
+    tEn = np.zeros(numEpochs)
     # time to decode verification results
-    tDe = np.zeros(numEpoches)
+    tDe = np.zeros(numEpochs)
+    '''
+    In our simulation, we must cap the transaction value,
+    so that all users have enough money to send in every epoch.
+    Otherwise, after a few epochs, more and more users will have zero
+    balance. Whenever they are chosen as senders, the block will be rejected,
+    making the chain stuck.
+    '''
+    txCap = initBal / numEpochs
 
     # run the system
-    for idxEpoch in range(numEpoches):
+    for idxEpoch in range(numEpochs):
         print("processing epoch:", idxEpoch)
         simEpoch(codedChains, coefficients, beta, alpha, tVer, tUp, tEn, tDe,
-                 numNodes, numShards, sizeShard, sparsity, idxEpoch)
+                 numNodes, numShards, sizeShard, sparsity, idxEpoch, txCap)
 
     # save the results
     result = {}
@@ -71,7 +79,7 @@ def codedInit(chains, C, sizeShard, numNodes, numShards):
 
 
 def simEpoch(codedChains, coefficients, beta, alpha, tVer, tUp, tEn, tDe,
-             numNodes, numShards, sizeShard, sparsity, idxEpoch):
+             numNodes, numShards, sizeShard, sparsity, idxEpoch, txCap):
     '''
     This function simulates and measures the verification, encoding/decoding,
     and updating happened in each epoch.
@@ -83,7 +91,7 @@ def simEpoch(codedChains, coefficients, beta, alpha, tVer, tUp, tEn, tDe,
     '''
 
     # generate blocks
-    blocks = fr.blockGen(numShards, sizeShard, sparsity)
+    blocks = fr.blockGen(numShards, sizeShard, sparsity, txCap)
 
     # fetch only the sender vector in the block needed for verification
     senderBlocks = [blocks[k][0, :] for k in range(numShards)]

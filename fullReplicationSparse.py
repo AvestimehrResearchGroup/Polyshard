@@ -10,7 +10,7 @@ def sparsify(x):
     return ss.coo_matrix(x)
 
 
-def fullReplication(numNodes, numShards, sizeShard, sparsity, numEpoches,
+def fullReplication(numNodes, numShards, sizeShard, sparsity, numEpochs,
                     initBal):
     '''
     This function simulates the verification, voting, and updating time of
@@ -38,21 +38,21 @@ def fullReplication(numNodes, numShards, sizeShard, sparsity, numEpoches,
     '''
 
     # initialize the system
-    chains = chainInit(numNodes, numShards, sizeShard, initBal, numEpoches)
-    tVer = np.zeros(numEpoches)
-    tUp = np.zeros(numEpoches)
-    tVote = np.zeros(numEpoches)
+    chains = chainInit(numNodes, numShards, sizeShard, initBal, numEpochs)
+    tVer = np.zeros(numEpochs)
+    tUp = np.zeros(numEpochs)
+    tVote = np.zeros(numEpochs)
     '''
     In our simulation, we must cap the transaction value,
     so that all users have enough money to send in every epoch.
-    Otherwise, after a few epoches, more and more users will have zero
+    Otherwise, after a few epochs, more and more users will have zero
     balance. Whenever they are chosen as senders, the block will be rejected,
-    making the chain stucked.
+    making the chain stuck.
     '''
-    txCap = initBal / numEpoches
+    txCap = initBal / numEpochs
 
     # run the system
-    for idxEpoch in range(numEpoches):
+    for idxEpoch in range(numEpochs):
         print("processing epoch:", idxEpoch)
         simEpoch(chains, tVer, tUp, tVote, numNodes, numShards,
                  sizeShard, sparsity, idxEpoch, txCap)
@@ -297,7 +297,7 @@ def uniTests():
 
 
 def simpleSharding(numNodes, numShards, sizeShard, sparsity,
-                   numEpoches, initBal):
+                   numEpochs, initBal):
     '''
     This function simulates the verification, voting, and updating time of
     block chain with simple sharding. In this system, each shard is repeated
@@ -330,7 +330,7 @@ def simpleSharding(numNodes, numShards, sizeShard, sparsity,
         print("processing shard:", str(k))
         t1, t2, t3, _ = fullReplication(numNodes=numRep, numShards=1,
                                         sizeShard=sizeShard, sparsity=sparsity,
-                                        numEpoches=numEpoches, initBal=initBal)
+                                        numEpochs=numEpochs, initBal=initBal)
 
         tVer.append(t1)
         tVote.append(t2)
