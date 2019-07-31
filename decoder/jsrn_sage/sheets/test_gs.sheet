@@ -1,0 +1,86 @@
+### Test implementation of Guruswami--Sudan functionality
+
+import time
+
+
+### Tests for constructors of interpolation polynomials
+# Does not test minimality
+Qfinders = [
+             #("knh orig", gs_construct_Q_knh_orig),
+             ("fast knh", gs_construct_Q_knh_fast),
+             ("k-n-h", gs_construct_Q_knh),
+             ("lee_osullivan", gs_construct_Q_lee_osullivan),
+             #("linalg", gs_construct_Q_linalg),
+           ]
+
+### Does not test minimality
+F = GF(59,'a')
+n = F.cardinality()
+k = 30
+points = [ (a, F.random_element()) for a in F.list() ]
+# shuffle(points)
+wy = k-1
+(tau,(s,ell)) = gs_decoding_radius(n,k,s=10)
+for name,alg in Qfinders:
+    print "Testing %s" % name
+    before = time.time()
+    Q = alg(points, -1, (s, ell), wy)
+    now = time.time() - before
+    assert gs_Q_is_interpolation(Q, points, s) , ("Q polynomial from %s was not an interpolater" % name)
+    print "\tTook %s seconds" % now
+
+ 
+### Test interpolation polynomial constructions by making them decode RS codes
+F = GF(59,'a')
+n,k= F.cardinality(), 24
+C = GRS(F,n,k,F.list()[:n])
+(tau,(s,ell)) = gs_decoding_radius(n,k,s=3)
+decoders = [ (name, GRSDecoderGuruswamiSudan(C,tau,Qfinder=alg)) for (name,alg) in Qfinders ]
+for name,dec in decoders:
+    print "Testing %s" % name
+    before = time.time()
+    assert test_decoder(C, dec, nerrs_min=C.d//2) , "Decoding failed"
+    print "\tTook %s seconds" % (time.time() - before)
+
+
+ 
+### Test interpolation polynomial constructions by making them decode A BIG RS codes
+P=Primes()
+F = GF(P.next(1000),'a')
+n= F.cardinality(); k = n//3
+C = GRS(F,n,k,F.list()[:n])
+(tau,(s,ell)) = gs_decoding_radius(n,k,s=3)
+write("$Decoding $%s$ up to $\\tau=%s$ with $s,\ell=%s", C, tau, (s, ell))
+decoders = [ (name, GRSDecoderGuruswamiSudan(C,tau,Qfinder=alg)) for (name,alg) in Qfinders ]
+for name,dec in decoders:
+    print "Testing %s" % name
+    before = time.time()
+    assert test_decoder(C, dec, nerrs_min=C.d//2) , "Decoding failed"
+    print "\tTook %s seconds" % (time.time() - before)
+
+ 
+### Timing test for gs_Q_hasse_derivatives
+F = GF(2^8,'a') # It is very dependent on which field, e.g. primefield or not
+Nx, Ny = 100, 40
+PF.<x> = F[]
+PFy.<y> = PF[]
+bigQ = PFy([PF.random_element(degree=Nx) for i in range(Ny)])
+point = (F.random_element(), F.random_element())
+print "Testing at point ", point
+for s in range(1, 5):
+    before = time.time()
+    gs_Q_hasse_derivatives(bigQ, point, s)
+    print "s=%s\t%s secs" % (s, time.time()-before)
+
+
+
+### TODO: Kill
+F = GF(59,'a')
+k = 30
+points = [ (a, F.random_element()) for a in F.list() ]
+# shuffle(points)
+wy = k-1
+for i in range(5):
+    before = time.time()
+    Q = gs_construct_Q_knh_fast(points, -1, (s, ell), wy)
+    print "\tTook %s seconds" % (time.time() - before)

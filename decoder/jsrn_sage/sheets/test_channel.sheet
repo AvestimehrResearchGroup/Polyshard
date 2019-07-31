@@ -1,0 +1,99 @@
+# Test channel.sage in various ways
+def eq_approx(a,b):
+    return abs(a-b) < .001
+
+### Test BinaryAdditiveGaussianWhiteNoiseChannel
+ch = BinaryAdditiveGaussianWhiteNoiseChannel(1)
+ch.transmit(0)
+r = ch.transmit(1)
+assert( eq_approx(ch.posteriori_probability(r, 0) + ch.posteriori_probability(r, 1),  1) )
+assert( eq_approx(ch.posteriori_probability(0., 0), .5) )
+assert( eq_approx(ch.posteriori_probability(0., 1), .5) )
+assert( ch.posteriori_probability(1., 1)  > .8 )
+assert( ch.posteriori_probability(1., 0)  < 0.2 )
+assert( ch.posteriori_probability(-1., 0) > .8 )
+assert( ch.posteriori_probability(-1., 1) < 0.2 )
+
+
+### Test posteriori_probability
+# we transmit many random symbols and for a given received symbol we
+# sum the posteriori probability of this being the sent. This should
+# sum to the actual number of times it was sent
+def test_posteriori(ch, N):
+    check_symbol = ch.input_space.random_element()
+    post_sum = 0
+    check_sent = 0
+    for i in range(N):
+        c = ch.input_space.random_element()
+        if c==check_symbol:
+            check_sent += 1
+        r = ch.transmit(c)
+        post_sum += ch.posteriori_probability(r, check_symbol)
+    print "Sent %s and ProbSum %s" % (check_sent, post_sum)
+    assert ( abs( check_sent - post_sum ) < .01*N ) , \
+        ("Actual sent and probability did not correspond: Sent %s and ProbSum %s" % (check_sent, post_sum))
+    print "Posteriori probability test passed"
+test_posteriori(ch, 10000)
+
+### Test posteriori_probability
+# by transmitting many symbols, perform hard-decision decoding and
+# count the number of errors. On average, this should be the sum of
+# the posteriori probabilities of receiving the wrong thing.
+def test_hd_and_posteriori(ch, N):
+    hd_errs = 0
+    post_sum = 0
+    for i in range(N):
+        c = ch.input_space.random_element()
+        r = ch.transmit(c)
+        hd = ch.decide_hard(r)
+        if c != hd:
+            hd_errs += 1
+        post_sum += ch.posteriori_probability(r, hd)
+    print "HD %s and ProbSum %s" % (N-hd_errs, post_sum)
+    assert ( abs( (N-hd_errs) - post_sum ) < .01*N ) , \
+        ("Hard-decision and probability did not correspond: HD %s and ProbSum %s" % (N-hd_errs, post_sum))
+    print "HD-posteriori probability test passed"
+test_hd_and_posteriori(ch, 10000)
+
+
+
+### Test BinaryExtSoftChannel
+F = GF(2^6, 'a')
+Fz, Fo = F.zero(), F.one()
+ch = BinaryExtSoftChannel(F, BinaryAdditiveGaussianWhiteNoiseChannel(.5))
+ch.transmit(Fz)
+r = ch.transmit(Fo)
+assert( eq_approx( sum(ch.posteriori_probability(r, a) for a in F), 1 ) )
+no_clue = [ 0. for i in range(ch.m) ]
+assert( all( eq_approx(ch.posteriori_probability(no_clue, a), 1/F.cardinality()) for a in F ) )
+all_ones = [ 1. for i in range(ch.m) ]
+assert( ch.posteriori_probability(all_ones, F([1]*ch.m))  > .95 )
+all_zeros = [ -1. for i in range(ch.m) ]
+assert( ch.posteriori_probability(all_zeros, F([0]*ch.m))  > .95 )
+
+### Test posteriori_probability
+test_posteriori(ch, 10000)
+### Test posteriori_probability
+test_hd_and_posteriori(ch, 10000)
+
+### Test the posteriori_probability_table
+for i in range(100):
+    r = ch.transmit(F.random_element())
+    probs = ch.posteriori_probability_table(r)
+    assert eq_approx( sum(probs), 1. ) , "Probability table doesn't sum to 1"
+    assert all( eq_approx( probs[i], ch.posteriori_probability(r, F.list()[i])) for i in range(F.cardinality()))
+
+### Timing tests
+import time
+# How much time does it cost to construct the probability matrix for 63 symbols
+loops = 5
+elapsed = 0
+for i in range(loops):
+    n = 63
+    c = [ F.random_element() for i in range(63) ]
+    r = ch.transmit(c)
+    now = time.time()
+    M = matrix(RR, [ ch.posteriori_probability_table(ri).values() for ri in r ])
+    elapsed += time.time() - now
+print "Construction took %s secs on average" % (elapsed/loops)
+

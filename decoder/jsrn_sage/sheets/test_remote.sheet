@@ -1,0 +1,24 @@
+### Test remote.py. Pasted into the top cell of any Sage Notebook, this downloads and imports Codinglib
+
+
+changeset = "c79fdd3"
+baseurl ="https://bitbucket.org/jsrn/codinglib/raw/" + changeset + "/"
+
+# Manually load the remote functionality
+import imp
+from sage.misc.remote_file import get_remote_file
+print "Downloading remote.py"
+remoteFile = get_remote_file(baseurl +  "remote.py", verbose=False)
+print "Loading remote.py"
+remote = imp.new_module("remote")
+exec open(remoteFile).read() in remote.__dict__
+
+print "Downloading the remainder of Codinglib"
+# Load the Sage library files and import them into the global namespace
+imports = remote.retrieve_codinglib(baseurl)
+print "Loading Codinglib"
+for stm in imports:
+    print "\tLoading '%s'" % stm
+    exec(stm)
+
+    

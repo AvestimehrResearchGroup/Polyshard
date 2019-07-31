@@ -1,0 +1,115 @@
+#Sheet for testing Power decoding functionality
+
+### Set up a code
+F = GF(251, 'alpha')
+n, k = 250, 40
+C = GRS(F, n, k, F.list()[1:n+1])
+
+### Power decoding without multiplicities (Gao)
+Dec = GRSDecoderPower(C, (1, 2))
+tau = Dec.decoding_radius()
+write("C = $"+str(C)+"\n$Decoding to %s with $s,\\ell = %s, %s$. Mindist is %s", tau, Dec.s, Dec.ell, (C.d-1)//2)
+test_decoder(C, Dec, nerrs=tau, N=5)
+
+
+### Power decoding with multiplicities (Gao)
+Dec = GRSDecoderPower(C, (2, 4))
+tau = Dec.decoding_radius()
+write("C = $"+str(C)+"\n$Decoding to %s with $s,\\ell = %s, %s$. Mindist is %s", tau, Dec.s, Dec.ell, (C.d-1)//2)
+test_decoder(C, Dec, nerrs=tau, N=5)
+
+
+
+### Power decoding with higher multiplicities (Gao)
+Dec = GRSDecoderPower(C, (3,5))
+tau = Dec.decoding_radius()
+write("C = $"+str(C)+"\n$Decoding to %s with $s,\\ell = %s, %s$. Mindist is %s", tau, Dec.s, Dec.ell, (C.d-1)//2)
+test_decoder(C, Dec, nerrs=tau-5, N=50)
+
+
+
+### Power decoding without multiplicities (Syndrome)
+Dec = GRSDecoderPowerSyndrome(C, (1,2))
+tau = Dec.decoding_radius()
+write("C = $"+str(C)+"\n$Decoding to %s with $s,\\ell = %s, %s$. Mindist is %s", tau, Dec.s, Dec.ell, (C.d-1)//2)
+test_decoder(C, Dec, nerrs=tau, N=50)
+
+
+
+### Power decoding with multiplicities (Syndrome)
+Dec = GRSDecoderPowerSyndrome(C, (2,4))
+tau = Dec.decoding_radius()
+write("C = $"+str(C)+"\n$Decoding to %s with $s,\\ell = %s, %s$. Mindist is %s", tau, Dec.s, Dec.ell, (C.d-1)//2)
+test_decoder(C, Dec, nerrs=tau, N=50)
+
+
+
+### Power decoding with higher multiplicities (Syndrome)
+F = GF(29, 'alpha')
+n, k = 28, 11
+C = GRS(F, n, k, F.list()[1:n+1])
+Dec = GRSDecoderPowerSyndrome(C, (3,5))
+tau = Dec.decoding_radius()
+write("C = $"+str(C)+"\n$Decoding to %s with $s,\\ell = %s, %s$. Mindist is %s", tau, Dec.s, Dec.ell, (C.d-1)//2)
+test_decoder(C, Dec, nerrs=tau, N=50)
+
+
+
+# ###############
+# The following is old (doesn't use Decoder structure) and partially DEPRECATED
+# ###############
+
+# ########################
+### SIMULATING FAILURE PROBABILITY
+# Gao variant is used, but by jsrn phd Prop 4.10, this is the same as Syndrome variant
+# ########################
+
+def perform_decoding(C, nerrs, ell):
+    c = C.random_codeword()
+    e = random_error(n,F,nerrs)
+    err_pos = set([ C.alphas[i] for i in support(e) ])
+    r = c + e
+
+    KE = power_gao_KE(C, r, ell)
+    Lambda = KE.minimal_solution()[0]
+    
+    found_pos = set([ r for (r,m) in Lambda.roots()])
+    return (Lambda.degree() == weight(e) and found_pos == err_pos)
+
+def test_failure(C, tau_min, tau_max, ell, N=100, debug=0):
+    def test_decoding(nerrs):
+        return perform_decoding(C, nerrs, ell)
+    def proba_theo(nerrs):
+        return (1. - ell/C.F.cardinality())^nerrs  # By Coppersmith--Sudan
+    sims = test_nerr_range(tau_min, tau_max, test_decoding, N=N, debug=debug) #TODO: This function doesn't exist anymore
+    results = dict()
+    print "After %s tries each, the success probability was" % N
+    for nerrs in sims.keys():
+        results[nerrs] = [ proba_theo(nerrs) , sims[nerrs] / N ]
+    result_table([ "#Errs","Theo","Simulated" ], results)
+
+### Test using a very small code
+F = GF(19)
+n, k = 10, 2
+C = GRS(F, n, k, F.list()[1:n+1])
+tau = 5
+ell = 3
+test_failure(C, tau+1, tau+1, ell, N=10000, debug=2)
+#---Cached output
+#After 10000 tries each, the success probability was
+#           #Errs		            Theo		       Simulated
+#               6		          35.66%		           0.02%
+
+
+### Bigger code
+F = GF(251, 'alpha')
+n, k = 175, 26
+C = GRS(F, n, k, F.list()[1:n+1])
+ell = virtual_best_list_size(n,k)
+tau = virtual_correction_radius(n,k,ell)
+test_failure(C, tau-1, tau, ell, N=10000, debug=2)
+#---Cached output
+#After 10000 tries each, the success probability was
+#           #Errs		            Theo		       Simulated
+#              92		          33.08%		               1
+#              93		          32.69%		          99.62%

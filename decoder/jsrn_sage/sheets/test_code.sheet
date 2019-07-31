@@ -1,0 +1,14 @@
+# Basic testing of code.sage
+
+### Test BlockCodeAbstract through BlockCode
+
+n,k = 40, 20
+F = GF(59)
+G = random_matrix(F, 20, 40)
+k = G.rank()
+C = BlockCode(G)
+
+# Test encoding/unencoding
+inf = random_vector(F,k)
+c = C.encode(inf)
+assert inf == C.unencode(c)

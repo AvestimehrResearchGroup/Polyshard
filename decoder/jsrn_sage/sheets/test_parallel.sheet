@@ -1,0 +1,49 @@
+### Parallel is not usually imported
+from codinglib.parallel import *
+
+class TaskWrapper(Task):
+    def __init__(self, task):
+        self.id = randint(1,1000)
+        print "Task %d created" % self.id
+        self.task = task
+
+    def __call__(self):
+        print "\t%d started" % self.id
+        self.task()
+        print "\t%d done" % self.id
+        
+
+### Create some tasks with random execution time and run them
+workers = WorkerPool()
+for i in range(3):
+    workers.add(Worker())
+manager = Manager(workers)
+
+tasks = [ TaskWrapper(TaskFunction(lambda: sleep(randint(1,10)))) for i in range(10) ]
+manager.perform_tasks(tasks)
+
+
+### Test shell command tasks
+workers = WorkerPool()
+for i in range(3):
+    workers.add(Worker())
+manager = Manager(workers)
+
+cmd = "sleep %d" % randint(1,7)
+tasks = [ TaskWrapper(TaskShellCommand(cmd)) for i in range(10) ]
+manager.perform_tasks(tasks)
+
+
+### A tangible test for shell command tasks
+get_cmd = lambda: "sleep %d; touch /tmp/test_parallel_%d" % (randint(1,7), randint(1,1000))
+tasks = [ TaskWrapper(TaskShellCommand(get_cmd())) for i in range(10) ]
+manager.perform_tasks(tasks)
+
+
+
+### SSH shell command test
+workers = WorkerPool()
+for server in [ "coeos.grace", "ocean.grace", "epimetheus.grace" ]
+get_cmd = lambda: "sleep %d; touch /tmp/test_parallel_%d" % (randint(1,7), randint(1,1000))
+tasks = [ TaskWrapper(TaskShellCommand(get_cmd())) for i in range(10) ]
+manager.perform_tasks(tasks)

@@ -1,0 +1,18 @@
+Work to do on codinglib
+
+* Rename project
+* Code
+** Rename Code to BlockCode
+Since we assume that its mono-alphabetic and linear (has generator matrix)
+** Support for Poly-alphabetic codes
+*** Contains CRT codes
+*** Ideal Codes
+** Code: decode function which is the inverse of encode
+* Interleaved codes
+** General framework for Interleaving of codes
+** Problems
+*** Support easy overriding of default construction if specialised is helpful
+*** Automatic extension of decoding algorithm?
+* Encoding/Decoding algorithms
+** Should be general/pluggable/choosable in some way
+** Should still be easy/automatic when one is not interested in choice

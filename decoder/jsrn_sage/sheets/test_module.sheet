@@ -1,0 +1,173 @@
+### Test module
+
+F = GF(17)
+PF.<x> = F[]
+
+M = matrix(PF, 3, 3, [[ x, x+1, x^2 + x],
+                      [ x^2+1, x^2, x],
+                      [ x^3, 1, x ]] )
+module_weak_popov(M)
+assert(module_is_weak_popov(M))
+
+module_popov(M)
+assert(module_is_popov(M))
+
+### Small random matrix
+m,n = 2, 4
+N = 18
+while True:
+    M = matrix(PF, m, n, lambda i,j: PF.random_element(degree=randint(0,N)))
+    module_weak_popov(M)
+    assert(module_is_weak_popov(M))
+
+module_popov(M)
+assert(module_is_popov(M))
+
+
+###
+module_popov(M)
+assert(module_is_popov(M))
+
+### Timing test: helper functions 
+import time
+def make_invertible_lower(PF, m, N=100):
+    "Create a lower-diagonal polynomial matrix which is invertible"
+    def cell(i,j):
+        if i<j:
+            return PF.zero()
+        elif i==j:
+            return PF.one()
+        else:
+            return PF.random_element(degree=randint(0,N))
+    return matrix(PF, m, m, cell)
+
+def make_gs_params(PF, m, N):
+    """Return a RS code and decoding parameters such that the
+    resulting Lee--O'Sullivan matrix has dimension m and approximate
+    degree N"""
+    ell = m-1
+    F = PF.base_ring()
+    smin , smax = ceil(N/F.cardinality()) , min(N//7, ell)  #7 as min length of code
+    if smin > smax:
+        raise Exception("It is impossible to satisfy the requirements")
+    s = ligt((smax+smin)/2)
+    n = floor(N/s)
+    # Choose the dimension which is close to the asymptotic limit that max dec. radius
+    k = min(n-2, round( n/(ell/s)^2 + 1))
+    C = GRS(F, n, k, F.list()[:n])
+    (tau,__) = gs_decoding_radius(n,k, l=ell, s=s)
+    assert tau>0  , "decoding radius is not positive"
+    return (C, tau, s, ell)
+        
+
+def make_gs_problem(PF, params):
+    """Make a Lee--O'Sullivan list decoding matrix to test with"""
+    (C, tau, s, ell) = params
+    c = C.random_codeword()
+    e = random_error(C.n, C.F, tau)
+    r = c+e
+    pts = [ (C.alphas[i], r[i]) for i in range(0, C.n) ]
+    M = gs_lee_osullivan_module(pts, tau, (s,ell), C.k-1)
+    module_apply_weights(M, [ i*(C.k-1) for i in range(ell+1)])
+    return M
+
+def time_weak_popov(m, N, iters, maker=None):
+    sum_time = 0
+    if not maker:
+        maker = "inv_lower"
+    if maker=="gs":
+        params = make_gs_params(PF, m, N)
+    for i in range(iters):
+        if maker=="inv_lower":
+            M = make_invertible_lower(PF, m, N)
+        else: #elif maker=="gs":
+            M = make_gs_problem(PF, params)
+        now = time.time()
+        module_weak_popov(M)
+        sum_time += time.time() - now
+        assert module_is_weak_popov(M)
+    return sum_time/iters
+
+def log_trend_line(data):
+    import numpy
+    keys = list(data)
+    slope,offset=numpy.polyfit([ log(i).n() for i in keys ],[ log(data[i]) for i in keys],1)
+    return slope,offset
+
+def exp_range(min, max, base):
+    return [ int(exp^i) for i in range(ceil(log(min, exp)), ligt(log(max, exp))) ]
+
+### Timing test: Big matrix
+m, N, iters = 50, 200, 5
+print "Minimising %s x %s with deg %s took on average %s" % (m,m, N, time_weak_popov(m,N,iters))
+
+
+### Timing test: Growth in dimension
+# Demonstrates that dependence on dimension is approximately power 2.5
+times = dict()
+N, iters  = 20, 2
+min_m, max_m = 10, 50; exp = 1.5
+for m in exp_range(min_m, max_m, exp):
+    print m
+    times[m] = time_weak_popov(m,N,iters) * 100 # scale everything so Sage log-plot stops complaining
+options = { 'base':2}
+g = list_plot_loglog(times, **options)
+show(g)
+print "Log-fit line has slope %s" % log_trend_line(times)[0]
+
+
+### Timing test: Growth in degree
+# Demonstrates that dependence on degree is approximately linear
+times = dict()
+F = GF(127)
+PF.<x> = F[]
+m, iters  = 20, 10
+for N in exp_range(32, 2048, base=2):
+    print N
+    times[N] = time_weak_popov(m,N,iters, maker="gs") * 100
+options = { 'base': 2}
+g = list_plot_loglog(times, **options)
+show(g)
+print "Log-fit line has slope %s" % log_trend_line(times)[0]
+
+
+
+
+# #####
+### ORDER BASIS
+# #####
+F = GF(59)
+Px.<x> = F[]
+d = 5
+M = matrix(5, 3, lambda i,j: Px.random_element(degree=d-1)).stack(identity_matrix(Px,3))
+B = module_order_basis(M, d)
+assert (B*M % x^d).is_zero() , "B is not an order basis of M!"
+assert B.is_weak_popov() , "B is not in weak Popov form"
+
+
+
+### Order basis with size Theta(m^2 d), m is size and d is precision
+# This example is a Hermite Padé and is taken from Neiger
+def storage_size(M):
+    return sum(sum(poly_degs(M))) + M.nrows() * M.ncols() 
+
+    
+F = GF(59)
+Px.<x> = F[]
+m = 2*4
+d = 128
+R = Px.random_element(degree=d-1)
+
+f1 = [ R if i==0 else (x^(i-1) + x^i) for i in range(m//2) ]
+f2 = [ Px.random_element(degree=d-1) for i in range(m//2) ]
+f =  f1 + f2
+M = matrix(m, 1, [ [f[i]] for i in range(m) ])
+# f = [ R, R + x*R, x*R + x^2*R, x^2*R + x^3*R ]
+# M = matrix(m//2, 1, [ [f[i]] for i in range(m//2) ])
+print "degs(M):\n", poly_degs(M)
+
+w = [0]*(m//2) + [d]*(m//2)
+B = module_order_basis(M, d, weights=w)
+print "\ndegs(B):\n", poly_degs(B)
+
+print "Size(B) = %s,  m^2*d/4 = %s" % (storage_size(B), m^2 * d//4)

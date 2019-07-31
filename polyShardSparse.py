@@ -14,7 +14,7 @@ def polyShard(numNodes, numShards, sizeShard, sparsity, numEpochs,
               initBal):
 
     # initialize system
-    chains = fr.chainInit(numNodes, numShards, sizeShard, initBal, numEpochs)
+    chains = fr.chainInit(numShards, sizeShard, initBal)
     # Generate parameters for Lagrange coding
     beta = [x + 1 for x in range(numShards)]
     alpha = [x + 1 for x in range(numNodes)]
@@ -107,24 +107,24 @@ def simEpoch(codedChains, coefficients, beta, alpha, tVer, tUp, tEn, tDe,
 
     # generate coded blocks for verification
     codedBlocks = [np.zeros([1, sizeShard]) for k in range(numNodes)]
-    tEncode = 0
+    tEncode = []
     for n in range(numNodes):
         tStart = time.time()
         codedBlocks[n] = encode(senderBlocks_mat, coefficients[n])
         tPassed = time.time() - tStart
-        tEncode = np.max([tPassed, tEncode])
-    tEn[idxEpoch] = tEncode
+        tEncode.append(tPassed)
+    tEn[idxEpoch] = np.max(tEncode)
 
     # verification
     compResults = np.zeros((numNodes, sizeShard))
-    tVerification = 0
+    tVerification = []
     for n in range(numNodes):
         tStart = time.time()
         compResults[n, :] = verifyByNode(codedChains[n], codedBlocks[n], n)
         tPassed = time.time() - tStart
         # verification time across the nodes is the maximum of each node
-        tVerification = np.max([tPassed, tVerification])
-    tVer[idxEpoch] = tVerification
+        tVerification.append(tPassed)
+    tVer[idxEpoch] = np.max(tVerification)
 
     # decode
     tStart = time.time()
@@ -138,17 +138,19 @@ def simEpoch(codedChains, coefficients, beta, alpha, tVer, tUp, tEn, tDe,
     for k in range(numShards):
         receiverBlocks_mat[k, :] = receiverBlocks[k]
     decisions_mat = np.array(decisions)
-    tUpdate = 0
+    tUpdate = []
     for n in range(numNodes):
         tStart = time.time()
         codedChains[n] = codedChainUpdate(codedChains[n], senderBlocks_mat,
                                           receiverBlocks_mat,
                                           decisions_mat, coefficients[n])
         tPassed = time.time() - tStart
-        tUpdate = np.max([tPassed, tUpdate])
-    tUp[idxEpoch] = tUpdate
+        tUpdate.append(tPassed)
+    tUp[idxEpoch] = np.max(tUpdate)
 
-    pass
+    return np.max(tVerification), np.median(tVerification), \
+        np.max(tEncode), np.median(tEncode), tDe[idxEpoch], np.max(tUpdate), \
+        np.median(tUpdate)
 
 
 def encode(blocks, coefficient):

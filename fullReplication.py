@@ -33,7 +33,7 @@ def fullReplication(numNodes, numShards, sizeShard, sparsity, numEpochs,
     '''
 
     # initialize the system
-    chains = chainInit(numNodes, numShards, sizeShard, initBal, numEpochs)
+    chains = chainInit(numShards, sizeShard, initBal)
     tVer = np.zeros(numEpochs)
     tUp = np.zeros(numEpochs)
     tVote = np.zeros(numEpochs)
@@ -66,7 +66,7 @@ def fullReplication(numNodes, numShards, sizeShard, sparsity, numEpochs,
     return tVer, tVote, tUp, fileName
 
 
-def chainInit(numNodes, numShards, sizeShard, initBal, numEpoch):
+def chainInit(numShards, sizeShard, initBal):
     '''
     This function creates the numShards chains stored at each node.
     Inputs:
@@ -109,14 +109,14 @@ def simEpoch(chains, tVer, tUp, tVote, numNodes, numShards,
     # verification
     # each of the numNodes nodes' opinion on each of the numShards blocks
     opinions = np.zeros((numNodes, numShards))
-    tVerification = 0
+    tVerification = []
     for n in range(numNodes):
         tStart = time.time()
         opinions[n, :] = verifyByNode(chains, blocks, n)
         tPassed = time.time() - tStart
-        # verification time across the nodes is the maximum of each node
-        tVerification = np.max([tPassed, tVerification])
-    tVer[idxEpoch] = tVerification
+        tVerification.append(tPassed)
+    # verification time across the nodes is the maximum of each node
+    tVer[idxEpoch] = np.max(tVerification)
 
     # voting
     tStart = time.time()
@@ -127,7 +127,8 @@ def simEpoch(chains, tVer, tUp, tVote, numNodes, numShards,
     tStart = time.time()
     chainUpdate(chains, blocks, decisions)
     tUp[idxEpoch] = time.time() - tStart
-    pass
+    return np.max(tVerification), np.median(tVerification), tVote[idxEpoch], \
+        tUp[idxEpoch]
 
 
 def blockGen(numShards, sizeShard, sparsity, txCap):

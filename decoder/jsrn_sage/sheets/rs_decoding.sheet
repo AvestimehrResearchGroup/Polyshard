@@ -1,0 +1,51 @@
+# Sheet demonstrating Codinglib implementations of several RS decoders
+### Initialise code
+import time
+
+F = GF(Primes().next(255),'a')
+n,k= F.cardinality()-1, 50
+C = GRS(F,n,k,F.list()[1:n+1], colmults=random_error(n, F, n))
+print C
+#C = GRS(F,n,k,F.list()[1:n+1])
+PF.<x> = F[]
+half_min_dist = (n-k)//2
+
+N = 100
+
+### Half-the-minimum-distance Berlekamp--Massey Syndrome
+test_decoder(C, GRSDecoderSyndrome(C), N=N)
+
+### Half-the-minimum-distance Euclidean Algorithm Syndrome
+test_decoder(C, GRSDecoderSyndrome(C, solver='ea'), N=N)
+
+### Half-the-minimum-distance Gao
+test_decoder(C, GRSDecoderGao(C), N=N)
+
+### Half-the-minimum-distance Gao Reencoded
+test_decoder(C, GRSDecoderGao(C, reencode=True), N=N)
+
+
+
+### Power decoding (ell>1, s=1) using Gao key equation
+test_decoder(C, GRSDecoderPower(C, params=(1,2)), N=N)
+
+### Power decoding (ell>1, s=1) using syndromes
+test_decoder(C, GRSDecoderPowerSyndrome(C, params=(1,2)), N=N)
+
+### Power decoding w. multiplicities (using Gao key equation)
+test_decoder(C, GRSDecoderPower(C, params=(3,6)), N=N)
+
+### Power decoding w. multiplicities (using syndromes key equation)
+test_decoder(C, GRSDecoderPowerSyndrome(C, params=(3,6)), N=N)
+
+
+
+### Welch-Berlekamp (Guruswami-Sudan with s=ell=1)
+test_decoder(C, GRSDecoderGuruswamiSudan(C, params=(1,1)), N=N)
+
+### Guruswami--Sudan
+(tau,(s,ell)) = gs_decoding_radius(n,k,s=3) #sets maximal decoding radius with s<=3
+print "Decoding %s errors beyond half the minimum distance" % (tau - (C.d-1)//2)
+test_decoder(C, GRSDecoderGuruswamiSudan(C, params=(s,ell)), N=N)
+ 
+### TODO: Wu (ell>1, s>1)

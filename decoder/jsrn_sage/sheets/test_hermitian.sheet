@@ -1,0 +1,442 @@
+### Tests for Hermitian code and its decoders
+import time
+
+def print_info(C, Dec):
+    if isinstance(Dec, HermitianDecoderGuruswamiSudan):
+        dec_str = "GS(%s,%s)" % (Dec.s, Dec.ell)
+    elif isinstance(Dec, HermitianDecoderPower):
+        dec_str = "Power(%s)" % (Dec.ell)
+    else:
+        raise Exception("Unknown decoder to print info about")
+    print "Code is %s. %s decoding radius is %s\n\talso (d-1)//2=%s\t(d-g-1)//2=%s\t(d-1)//2 - g = %s" \
+        % (C, dec_str, Dec.decoding_radius(), (C.d-1)//2, (C.d-C.g-1)//2, (C.d-1)//2-C.g)
+
+# Speed test helper functions. NOTE: Remember to insert @clock_call decorators
+# to use this.
+# The clock_call decorator (codinglib.codeTesting.clock_call) should be added to
+# all methods of the decoders that you wish to get a breakdown for. Insert these
+# in Codinglib, run make and restart Sage.
+def run_test_and_print_results(C, get_dec, nerrs=None, Runs=10):
+    before = time.time()
+    Dec = get_dec()
+    after_precompute = time.time() - before
+    print_info(C, Dec)
+    if nerrs is None:
+        nerrs = Dec.decoding_radius()
+    print "Decoding from exactly %s errors" % nerrs
+    clock_call_reset()
+    for i in range(Runs):
+        print "\tDecoding a received word"
+        clock_call_new_run()
+        assert test_decoder(C, Dec, N=1, nerrs=nerrs, silent=True)
+        clock_call_stop_run()
+    clock_call_print_results()
+    print "Precomputation took %s secs." % after_precompute
+
+
+# #####
+# Tests for Hermitian code
+# #####
+### Test that the unencoded function from a codeword encodes to the codeword
+C = HermitianCode(3, 11) 
+
+c = C.random_codeword()
+f = C.information_to_function(C.unencode(c))
+assert vector( f(p[0], p[1]) for p in C.Ps ) == c
+print "Test succeeded"
+
+### Test that encoding and unencoding leaves the same function
+def random_function(C, degree):
+    "Compute a random function in Ya with max weighted degree"
+    x,y = C.Ya.gens()
+    Px = PolynomialRing(C.F,'x')
+    return sum( y^j*C.Ya(Px.random_element(degree=(degree-j*(C.q+1))//C.q, terms=20)) for j in range(C.q) )
+    
+f = random_function(C, C.m-1)
+inf = C.function_to_information(f)
+c = C.encode(inf)
+inf_back = C.unencode(c)
+assert inf==inf_back
+fback = C.information_to_function(inf_back)
+assert f == fback
+print "Test succeeded"
+
+# #####
+# TESTS FOR DECODING ALGORITHMS 
+# GENERAL
+# #####
+
+### Test that converting back and forth between bases used in decoding works
+m = 500
+C = HermitianCode(11, m) 
+Dec = HermitianDecoderAbstract(C)
+
+def convert_inversion_test():
+    fany = C.Ya.random_element(degree=m//(C.q+1), terms=100)
+    before = time.time()
+    fhat = fany.truncate(C.Ya.gens()[0], C.q+1)
+    # print fhat
+    f = Dec._shat_basis_to_std(fhat)
+    # print f
+    power = Dec._std_basis_to_power_series(f, m+1)
+    fhatback = Dec._power_series_to_shat_basis(power, m+1)
+    # print fhatback.degrees()
+    fback = Dec._shat_basis_to_std(fhatback)
+    # print fback
+    assert f == fback , "f was not equal to fback"
+    return time.time()-before
+elapsed = convert_inversion_test()
+print "Success. Elapsed ", elapsed
+
+### Test that multiplying in standard basis and reducing equals multiplying power series and converting
+
+C = HermitianCode(5, 20) 
+Dec = HermitianDecoderAbstract(C)
+
+before = time.time()
+m = C.q^3-1
+fany = C.Ya.random_element(degree=m//(C.q+1)//2, terms=15)
+f = fany.truncate(C.Ya.gens()[1], C.q)
+gany = C.Ya.random_element(degree=m//(C.q+1)//2, terms=15)
+g = gany.truncate(C.Ya.gens()[1], C.q)
+print "f: ", f.degrees()
+print "g: ", g.degrees()
+fg = Dec._multiply_and_reduce(f,g)
+print "fg: ", fg.degrees()
+fpow = Dec._std_basis_to_power_series(f, C.q^3)
+gpow = Dec._std_basis_to_power_series(g, C.q^3)
+fgpow = (fpow*gpow).truncate(C.q^3)
+fghatback =  Dec._power_series_to_shat_basis(fgpow, m+1)
+print "fghatback: ", fghatback
+fgback = Dec._shat_basis_to_std(fghatback)
+assert fg == fgback , "The products are not equal"
+print "Success. Elapsed ",  (time.time()-before)
+
+
+### Test xlist conversion
+m = C.q^3-1
+fany = C.Ya.random_element(degree=m//(C.q+1)//2, terms=15)
+f = fany.truncate(C.Ya.gens()[1], C.q)
+assert f == Dec._xlist_to_Ya(Dec._Ya_to_xlist(f))
+print "Success"
+
+### Test _xlist_multiply_by_y
+y = C.Ya.gens()[1]
+assert Dec._multiply_and_reduce(y,f) == Dec._xlist_to_Ya(Dec._xlist_multiply_by_y(Dec._Ya_to_xlist(f)))
+print "Success"
+
+
+### Test Lagrange interpolation
+C = HermitianCode(5, 20) 
+Dec = HermitianDecoderAbstract(C)
+
+r = random_vector(C.F, C.n)
+R = Dec._lagrange_function(r)
+assert vector( R(p[0], p[1]) for p in C.Ps ) == r , "Lagrange function did not interpolate"
+print "Success"
+
+
+
+
+
+# ###
+# POWER DECODING
+# ###
+
+
+### Test Power(ell=1) decoding algorithm (half-minimum-distance minus g/2)
+C = HermitianCode(q=4, m=54) 
+Dec = HermitianDecoderPower(C, 1)
+print_info(C, Dec)
+test_decoder(C, Dec, N=5)
+
+### Test Power(ell=2) decoding algorithm
+C = HermitianCode(q=4, m=20) 
+Dec = HermitianDecoderPower(C, 2)
+print_info(C, Dec)
+test_decoder(C, Dec, N=10)
+
+### Test Power(ell=2) decoding algorithm slightly bigger
+C = HermitianCode(q=5, m=20) 
+Dec = HermitianDecoderPower(C, 2)
+print_info(C, Dec)
+test_decoder(C, Dec, N=10, nerrs=47)
+
+
+### Speed test (remember to insert @clock_call decorators)
+C = HermitianCode(q=7, m=55)
+run_test_and_print_results(C, lambda: HermitianDecoderPower(C, 2))
+
+# CACHED OUTPUT
+# No. of runs:	    10 
+# Total run time:	   63.895 secs.
+# Avg. run time:	    6.390 secs.
+# Med. run time:	    6.322 secs.
+#                Function/Method| #calls|     Total time|  Med. time/run| Med. time/call|stddev/avg|  % of run
+# ------------------------------------------------------------------------------------------------------------
+#    _power_series_to_shat_basis|    10 |    0.013 secs.|    0.001 secs.|    0.001 secs.|  52.866% |   0.018% 
+#     _std_basis_to_power_series|    20 |    0.433 secs.|    0.042 secs.|    0.021 secs.|  10.109% |   0.663% 
+#                     precompute|     1 |    0.001 secs.|    0.001 secs.|    0.001 secs.|  -1.000% |   0.015% 
+#              _attempt_division|    10 |    2.574 secs.|    0.257 secs.|    0.257 secs.|   2.316% |   4.048% 
+#             _lattice_reduction|    10 |   59.299 secs.|    5.872 secs.|    5.872 secs.|   2.130% |  92.922% 
+#               _power_lagranges|    10 |    0.913 secs.|    0.091 secs.|    0.091 secs.|   1.304% |   1.443% 
+#            _build_key_equation|    10 |    0.895 secs.|    0.089 secs.|    0.089 secs.|   1.672% |   1.402% 
+#             _shat_basis_to_std|    10 |    0.004 secs.|    0.000 secs.|    0.000 secs.|  -1.000% |   0.005% 
+#                                                                                                   ----------
+#                                                                                                    100.370% 
+# Precomputation took 0.00555992126465 secs.
+
+
+
+### Speed test bigger
+C = HermitianCode(q=8, m=70)
+run_test_and_print_results(C, lambda: HermitianDecoderPower(C, 3), Runs=3)
+
+
+
+
+
+# ###
+# GURUSWAMI--SUDAN
+# ###
+
+### Test the coherence of Guruswami-Sudan parameter and decoding radius functions
+C = HermitianCode(4, 21)
+GS = HermitianDecoderGuruswamiSudan 
+def test_gs_coherence(C, tau):
+    print "Testing coherence: %s" % tau
+    (s,ell) = GS.get_parameters_satisfiable(C, tau)
+    assert GS.are_parameters_satisfiable(C, tau, (s,ell)) , "1"
+    tau_up = GS.decoding_radius_from_parameters(C, (s,ell))
+    assert (s,ell) == GS.get_parameters_satisfiable(C, tau_up), "2"
+    assert not GS.are_parameters_satisfiable(C, tau, (s-1,ell)) , "3"
+    assert not GS.are_parameters_satisfiable(C, tau, (s,ell-1)) , "4"
+    assert not GS.are_parameters_satisfiable(C, tau, (s-1,ell-1)) , "5"
+    assert tau_up >= tau , "6"
+    assert GS.decoding_radius_from_parameters(C, (s-1,ell)) < tau_up , "7"
+    assert GS.decoding_radius_from_parameters(C, (s,ell-1)) < tau_up , "8"
+    assert GS.decoding_radius_from_parameters(C, (s-1,ell-1)) < tau_up , "9"
+    
+for i in range(1,28):
+    test_gs_coherence(C, i)
+print "Tests succeeded"
+
+### Validate that found parameters correspond to those of Lee-O'Sullivan
+# Lee, Kwankyu, and Michael E. O’Sullivan. "List Decoding of Hermitian Codes
+# Using Groebner Bases." Journal of Symbolic Computation 44, no. 12 (2009):
+# 1662–75.
+# Note that they do not give ell (but a bound can be computed)
+# (q * k) |-> [(s, tau) list]
+lo_params = \
+  {
+      (3, 8): [ (1, 5), (2, 7), (3,8), (4,9), (11, 10) ]
+    , (3,14): [ (1, 2), (2, 3), (3,4), (5,5), (25, 6) ]
+    , (3,22): [ (1, -2), (2, -1), (3, 0), (7,1) ]
+    , (4,16): [ (1, 16), (2, 21), (3,23), (4,24), (6,25), (11,26), (41, 27) ]
+  }
+
+for (q, k) in lo_params:
+    for (s, tau) in lo_params[(q,k)]:
+        m = k + q*(q-1)//2 - 1
+        C = HermitianCode(q, m)
+        s_m, ell_m = GS.get_parameters_satisfiable(C, tau)
+        assert s_m == s , "s Fail: (q, k, s, tau) = %s" % ((q,k,s,tau),)
+        assert tau == GS.decoding_radius_from_parameters(C, (s_m, ell_m)) , "tau Fail: (q, k, s, tau) = %s" % ((q,k,s,tau),)
+print "Test succeeded"
+
+
+### Test the Guruswami--Sudan decoder up to d/2-g/2
+C = HermitianCode(q=4, m=21) 
+Dec = HermitianDecoderGuruswamiSudan(C, params=(1,1))
+print_info(C, Dec)
+assert Dec.decoding_radius() == (C.d-1)//2 - C.g
+assert Dec.decoding_radius() == 15
+test_decoder(C, Dec, N=5, nerrs=21)
+
+
+### Test the Guruswami--Sudan decoder beyond
+C = HermitianCode(q=3, m=12) 
+Dec = HermitianDecoderGuruswamiSudan(C, params=(2,2))
+print_info(C, Dec)
+test_decoder(C, Dec, N=5)
+
+
+###
+
+C = HermitianCode(q=3, m=6)
+Dec = HermitianDecoderGuruswamiSudan(C, params=(2,3))
+print_info(C, Dec)
+report = test_decoder(C, Dec, N=5)
+
+
+
+### Speed test of internals (remember to insert @clock_call decorators)
+C = HermitianCode(q=7, m=55)
+run_test_and_print_results(C, lambda: HermitianDecoderGuruswamiSudan(C, 3), Runs=3)
+
+
+
+# ###
+# COMPARISONS BETWEEN POWER AND GS
+# ###
+
+
+### Speed comparison between Power and GS (setup)
+C = HermitianCode(q=7, m=55)
+decPower = HermitianDecoderPower(C, 2)
+decGS = HermitianDecoderGuruswamiSudan(C, params=(1,2))
+nerrs = decPower.decoding_radius()
+print_info(C, decPower)
+print_info(C, decGS)
+
+N = 5
+print "Power decoding:"
+repPower = test_decoder(C, decPower, N=N, nerrs=nerrs, continue_on_error=True)
+print "GS decoding:"
+repGS = test_decoder(C, decPower, N=N, nerrs=nerrs, continue_on_error=True)
+
+
+### Decoding performance comparison between Power and GS (setup)
+C = HermitianCode(q=4, m=14)
+decPower = HermitianDecoderPower(C, 2)
+decGS = HermitianDecoderGuruswamiSudan(C, params=(1,2))
+print_info(C, decPower)
+print_info(C, decGS)
+
+N = 300
+nerrs_min, nerrs_max = 22, 29
+results = { 'GS': dict(), 'Power': dict() }
+def add_test(nerrs, alg, test_report):
+    wins = sum(1 for succ,_,_ in test_report if succ)
+    if nerrs in results[alg]:
+        last = results[alg][nerrs]
+        results[alg][nerrs] = (len(test_report) + last[0], wins+last[1])
+    else:
+        results[alg][nerrs] = (len(test_report), wins)
+
+### Run the test
+for nerrs in range(nerrs_max, nerrs_min-1, -1):
+    for alg in ["Power", "GS"]:
+        print "Running %s errors %s" % (nerrs, alg)
+        if nerrs in results[alg]:
+            already = results[alg][nerrs][0]
+        else:
+            already = 0
+        rep = test_decoder(C, decPower, N=max(0, N-already), nerrs=nerrs, silent=True, continue_on_error=True)
+        add_test(nerrs, alg, rep)
+
+print "Power:\n", results["Power"]
+print "GS:\n", results["GS"]
+
+# CACHED earlier results
+# C = HermitianCode(q=4, m=14)
+# decPower = HermitianDecoderPower(C, 2)
+# decGS = HermitianDecoderGuruswamiSudan(C, params=(1,2))
+#     Power:
+#     {22: (101, 101), 23: (101, 101), 24: (101, 101), 25: (300, 300), 26: (300, 300), 27: (300, 300),
+#      28: (300, 287), 29: (300, 15)}
+#     GS:
+#     {22: (101, 101), 23: (101, 101), 24: (101, 101), 25: (300, 300), 26: (300, 300), 27: (300, 300),
+#      28: (300, 289), 29: (300, 15)}
+
+
+
+### If one decoder fails does the other? First do correlation
+def test_dec_correlation(C, nerrs, dec1, dec2, N = 100):
+    fail1, fail2, fail_both = 0,0,0
+    print "Doing %s decodings" % N
+    def test_output(dec, r):
+        try:
+            cout = dec.decode(r)
+            if dec.is_list_decoder():
+                return c in cout
+            else:
+                return c == cout
+        except DecodingFailedError:
+            return False
+    for trials in range(N):
+        (r,e,c) = decoding_instance(C, nerrs)
+        s1 = test_output(dec1, r)
+        s2 = test_output(dec2, r)
+        if not (s1 and s2):
+            if s1:
+                print "Only Decoder 2 failed"
+                fail1 += 1
+            elif s2:
+                print "Only Decoder 1 failed"
+                fail2 += 1
+            else:
+                print "Both decoders failed"
+                fail_both += 1
+    print "Test finished"
+    return fail1, fail2, fail_both
+
+C = HermitianCode(q=4, m=14)
+decPower = HermitianDecoderPower(C, 2)
+decGS = HermitianDecoderGuruswamiSudan(C, params=(1,2))
+print_info(C, decPower)
+print_info(C, decGS)
+
+test_dec_correlation(C, nerrs, decPower, decGS)
+
+### If GS fails does Power?
+def test_dec_implication(C, nerrs, dec1, dec2, N = 100):
+    first_fails, both_fails = 0, 0
+    print "Doing %s decodings" % N
+    for trials in range(N):
+        (r,e,c) = decoding_instance(C, nerrs)
+        success = False
+        try:
+            c1 = dec1.decode(r)
+            if dec1.is_list_decoder():
+                success = c in c1
+            else:
+                success = c == c1
+        except DecodingFailedError:
+            pass
+        if not success:
+            print "First decoder failure. Testing second"
+            first_fails += 1
+            success = False
+            try:
+                c2 = dec2.decode(r)
+                if dec2.is_list_decoder():
+                    success = c in c2
+                else:
+                    success = c == c2
+            except DecodingFailedError:
+                pass
+            if success:
+                print "\tSecond decoder succeeded!"
+            else:
+                print "\tSecond decoder failed"
+    print "Test finished"
+    return trials, first_fails, both_fails
+test_dec_implication(C, nerrs, decGS, decPower, N=100)
+
+### Other way round: If Power fails beyond GS promised radius, does GS?
+test_dec_implication(C, nerrs, decPower, decGS, N=100)
+
+
+###
+for alg in ["GS", "Power"]:
+    d = results[alg]
+    nd = dict()
+    for nerrs in d:
+        nd[nerrs] = (100, d[nerrs])
+    results[alg] = nd
+     
+
+#TODOS:
+# - Why does increasing s sometimes decrease prob. of decoding beyond proven bound? (according to L/O)
+
+
+
+def clock_call_details(fun_name):
+    """Return all collected timings for the named function"""
+    details = dict()
+    for run in codeTesting.__clock_call_dict:
+        if fun_name in codeTesting.__clock_call_dict[run]:
+            details[run] = codeTesting.__clock_call_dict[run][fun_name]
+    return details
+            

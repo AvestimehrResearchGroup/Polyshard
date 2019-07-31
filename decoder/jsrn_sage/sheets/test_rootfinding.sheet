@@ -1,0 +1,205 @@
+### Sheet to test rootfinding.sage (set ALG=\"roth_ruckenstein\" or \"alekhnovich\" as you wish)
+#ALG = "roth_ruckenstein"
+ALG = "alekhnovich"
+F = GF(17)
+Px.<x> = F[]
+Pxy.<y> = Px[]
+
+def test_rootfindings(Q, true_roots):
+    true_roots = set(true_roots)
+    roots = set(rootfind_bivariate(Q, algorithm=ALG))
+    print "Found roots: ", roots
+    assert all(Q(root).is_zero() for root in roots) , "The returned are not all roots"
+    assert roots == true_roots , "The roots are not correct"
+
+    roots_low = set(rootfind_bivariate(Q, maxd=2, algorithm=ALG))
+    assert  roots_low == set(filter(lambda r: r.degree()<=2, true_roots) ) , "The returned low roots are not correct"
+
+    k=5
+    roots_mod = set(rootfind_modulo(Q, precision=k, algorithm=ALG))
+    assert all( (x^k).divides(Q(mroot)) for (mroot, d) in roots_mod) , "The modulo roots are not roots to the correct precision"
+    assert all( exists(roots_mod, lambda (mroot, _): mroot==root) for root in roots) , "The modulo roots does not contain all actual roots"
+    for mroot, d in roots_mod:
+        assert (x^k).divides(Q(mroot + Px.random_element()*x^d)) , "The modulo root cannot be properly extended"
+
+    print "Test succeeded"
+
+
+
+
+### Test that the roots of a specific Q are properly found in various setups
+Q = (y - (x^2 + x + 1)) * (y^2 - x + 1) * (y - (x^3 + 4*x + 16))
+test_rootfindings(Q, [x^2 + x + 1, x^3 + 4*x + 16])
+
+
+### Example for finding a power series root
+Q = y*(1-x) - 1
+roots = rootfind_bivariate(Q, algorithm=ALG)
+assert roots==[] , "The actual roots should be empty"
+
+k = 5
+roots_mod = rootfind_modulo(Q, precision=k, algorithm=ALG)
+assert roots_mod == [(x^4 + x^3 + x^2 + x + 1, 5)] , "The modulo roots are not correct"
+
+
+### Example for finding a power series root whose free term has lower degree than precision
+Q = y*x*(1-x) - x
+roots = rootfind_bivariate(Q, algorithm=ALG)
+assert roots==[] , "The actual roots should be empty"
+
+k = 5
+roots_mod = rootfind_modulo(Q, precision=k, algorithm=ALG)
+assert roots_mod == [(x^3 + x^2 + x + 1, 4)] , "The modulo roots are not correct"
+
+
+### Some other nasty examples
+k = 5
+Q = prod( y - sum( x^i for i in range(h+1) ) for h in range(k))
+test_rootfindings(Q, set( sum(x^i for i in range(h+1)) for h in range(k)))
+
+
+### Stress-test by Guruswami--Sudan decoding
+F = GF(59)
+n, k = 58, 34
+C = GRS(F, n, k, F.list()[1:n+1])
+tau = list_decoding_range(n, C.true_minimum_distance())[1] - 1
+
+Dec = GRSDecoderGuruswamiSudan(C, tau=tau, root_finder=lambda Q, wy: rootfind_bivariate(Q, wy, algorithm=ALG))
+write("%s", Dec)
+test_decoder(C, Dec, N=5, nerrs=Dec.decoding_radius())
+
+### Some bigger decodings for speed results
+import time, gc
+F = GF(601)
+n, k = 600, 340
+C = GRS(F, n, k, F.list()[1:n+1])
+tau,_ = gs_decoding_radius(n,k, s=4)
+
+clocks = []
+dc_threshold = 2
+def root_finder(Q, wy):
+    global clocks
+    before = time.clock()
+    if ALG=="alekhnovich":
+        fs = rootfind_bivariate(Q, maxd=wy, algorithm=ALG, dc_threshold=dc_threshold)
+    else:
+        fs = rootfind_bivariate(Q, maxd=wy, algorithm=ALG)
+    clocks.append(time.clock() - before)
+    gc.collect()
+    return fs
+Dec = GRSDecoderGuruswamiSudan(C, tau=tau, root_finder=root_finder)
+write("%s", Dec)
+
+test_decoder(C, Dec, N=5, nerrs=Dec.decoding_radius())
+clocks.sort()
+print "\nRoot finding (%s) took %s" % (ALG if ALG != "alekhnovich" else ALG + "(%s)" % dc_threshold, clocks)
+
+# #CACHED OUTPUT
+# Root finding (roth_ruckenstein) took [1.5686860084533691, 1.7702960968017578, 3.093410015106201, 4.591142177581787, 7.758476972579956]
+# 
+# Root finding (alekhnovich(None)) took [0.27674599999999927, 0.27737199999999973, 0.2774080000000012, 0.28671699999999944, 0.44976899999999986]
+# Root finding (alekhnovich(5)) took [0.28419600000000145, 0.45989000000000146, 0.4662450000000007, 0.46713499999999897, 1.0340710000000044]
+# Root finding (alekhnovich(50)) took [0.3729559999999994, 0.6252870000000001, 0.632873, 0.8898479999999989, 1.4133779999999998]
+
+
+
+### For profiling inspection, use GS to construct a Q and take powers of this to construct a huge poly to root find
+import time, gc
+F = GF(Primes().next(5000))
+n, k = 800, 50
+C = GRS(F, n, k, F.list()[1:n+1])
+(tau, (s,ell)) = gs_decoding_radius(n,k, s=3)
+print "C=%s, tau=%s, s,ell=(%s,%s)" % (C, tau, s, ell)
+
+(r,e,c) = decoding_instance(C, tau)
+# Following adapted from GRSDecoderGuruswamiSudan
+d,alphas,wy = C.d, C.alphas, k-1
+points = [ (alphas[i], r[i]) for i in range(0,len(alphas)) ]
+Qsmall = gs_construct_Q(points, tau, (s,ell), wy)
+Qsmall = rootfinding._convert_Q_representation(Qsmall)
+
+Pz.<z> = Qsmall[0].parent()[]
+
+### Now for profiling: Copy this into the Sage shell
+Qbig = (Pz(Qsmall)^4).list()
+dc_threshold = None
+import cProfile
+before = time.time()
+cProfile.runctx("rootfind_alekhnovich(Qbig, dc_threshold=dc_threshold)", globals(), locals())
+print "Rootfinding and profiling done. Took %s secs" % (time.time() - before)
+
+# ## Cached output
+#   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+#88920/27288    0.879    0.000    2.471    0.000 complex_interval_field.py:346(__call__)
+#40528/20264    2.079    0.000    3.388    0.000 log.py:205(__call__)
+#      33908    4.749    0.000    4.974    0.000 other.py:554(__call__)
+#       6620    7.730    0.001   55.408    0.008 rootfinding.py:135(_alekhnovich_shift_poly)
+# 33908/6620   33.595    0.001   45.290    0.007 rootfinding.py:147(shift_rec)
+#          1    0.000    0.000   94.437   94.437 rootfinding.py:163(rootfind_alekhnovich)
+#    13241/1    0.127    0.000   94.428   94.428 rootfinding.py:189(alekh_rec)
+#       6620    0.047    0.000   36.294    0.005 rootfinding.py:41(_strip_x_pows)
+#      33976   26.369    0.001   27.400    0.001 rootfinding.py:46(lead_zeroes)
+#      13644    2.878    0.000    9.285    0.001 util.py:459(gilt)
+#      13644    1.451    0.000    2.244    0.000 {method '_complex_mpfi_' of 'sage.symbolic.expression.Expression' objects}
+#   16957611    1.029    0.000    1.029    0.000 {method 'is_zero' of 'sage.structure.element.Element' objects}
+#      33976    8.632    0.000    8.632    0.000 {method 'shift' of 'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_template' objects}
+#      38491    2.291    0.000    2.291    0.000 {method 'truncate' of 'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_template' objects}
+# ... Plus contributions <1 sec.
+#
+# Rootfinding and profiling done. Took 94.4394168854 secs
+
+
+Rootfinding and profiling done. Took 94.4394168854 secs
+
+
+### Speed-comparisons. First some helper functions
+def problem_builder((n,k,tau,s,ell)):
+    C = GRS(F,n,k,F.list()[1:n+1])
+    d,alphas = C.d, C.alphas
+    wy = k-1
+    (r,e,c) = decoding_instance(C, tau)
+    # Following adapted from GRSDecoderGuruswamiSudan
+    points = [ (alphas[i], r[i]) for i in range(0,len(alphas)) ]
+    Q = gs_construct_Q(points, tau, (s,ell), wy)
+    return (rootfinding._convert_Q_representation(Q), wy)
+
+rootfinders = {}
+rootfinders["Roth--Ruckenstein"] =  lambda (Q, wy): rootfind_roth_ruckenstein(Q, maxd=wy)
+for dc in [ None , 5, 10, 25, 100 ]: 
+    #Nasty trap here: dc is not caught as closure in function applications, so we need to create a class to do it
+    class T:
+        def __init__(self, dc):
+            self.dc = dc
+        def __call__(self, (Q, wy)):
+            return rootfind_alekhnovich(Q, maxd=wy, dc_threshold=self.dc)
+    rootfinders[("Alekhnovich", dc)] = T(dc)
+filestub = "rootfinding_compare_%s"
+
+### Run speed comparison with varying code length
+results = None
+max_n = 5000
+F = GF(Primes().next(max_n),'a')
+test_ns = (range(10, 100, 10)) + (range(100, 800, 100)) #+ range(800, 2000, 300) + range(2000, 5000, 700)
+#test_ns = range(800, 2000, 300) + range(2000, 5000, 700)
+iters = 10
+rate = .4
+# Initially choose a decent ell for the s
+(_, (s,ell)) = gs_decoding_radius(F.cardinality(), floor(F.cardinality()*rate), s=3)
+def ntest_next_params():
+    global s,ell
+    n = ntest_next_params.it.next()
+    k = floor(n*rate)
+    (tau,(s,ell)) = gs_decoding_radius(n,k,l=ell,s=s)
+    return ((n,k,tau,s,ell), n)
+ntest_next_params.it = test_ns.__iter__()
+results = comparison_test(rootfinders, ntest_next_params, problem_builder, continue_results = results, iters=iters, debug=1)
+    
+### Save simulation results
+comparison_test_save(filestub % "ntest", results)
+
+### Plot speed results
+g = comparison_test_plot(rootfinders, results)
+show(g)
+
+
+

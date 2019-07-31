@@ -1,0 +1,5 @@
+#!/bin/sh
+sed '/OVERVIEW_DUMMY/ {
+        r _doclines.tmp
+        d
+}' < readme.md.pre

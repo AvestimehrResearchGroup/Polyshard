@@ -1,0 +1,73 @@
+### Testing the Demand-Driven speedup for solving 2D key equations
+from codinglib import *
+all = __builtins__.all
+
+### Classical key equation with non-simple G
+F = GF(2)
+PF.<x> = F[]
+G = x^5 - 1
+S = PF.random_element(degree=4)
+
+###
+ke = KeyEquation2D(sigma=1, rho=1, Gs=[G], Ss=[[S]], nu=1, etas=[1], ws=[2])
+print(ke.get_module(weighted=True))
+print " "
+min_mod = ke.module_minimised(weighted=True, algorithm='demand')
+print(min_mod)
+assert module_is_weak_popov(min_mod) , "Returned module is not in weak Popov form"
+sol = ke.solution_minimal()
+print(sol)
+assert (sol[0] * S) % G == sol[1]  ,  "Returned was not a solution" 
+assert sol[0].degree() + ke.etas[0] > sol[1].degree() + ke.ws[0] , "Returned did not satisfy degree constraints"
+
+
+
+
+#//////////
+### MgLFSR from RS decoding
+#//////////
+F = GF(251)
+n, k = 240 , 30
+PF.<x> = F[]
+C = GRS(F, n, k, F.list()[:n])
+ell = power_best_list_size(n, k)
+tau = power_correction_radius(n, k, ell=ell)
+write("$Code: $%s$, list size: $%s$, decoding radius: $%s", C, ell, tau)
+
+###
+c = C.random_codeword()
+e = random_error(n, F, tau)
+rec = c + e
+
+###
+ke = power_gao_KE(C, rec, ell)
+min_mod = ke.module_minimised(weighted=True, algorithm='demand')
+print(poly_degs(min_mod))
+assert module_is_weak_popov(min_mod) , "Returned module is not in weak Popov form"
+sol = ke.solution_minimal()
+assert sol[0].monic() == C.error_locator(e, x)
+print "Success"
+
+
+
+
+
+#//////////
+### Hermitian Power decoding (full 2D Key equation)
+#//////////
+
+
+
+
+
+#//////////
+### Test previous function
+#//////////
+F = GF(2)
+PF.<x> = F[]
+ke = KeyEquation2D(rho=1, sigma=3, Gs=[PF.one()]*3, Ss=[[PF.one()]*3]*1,
+                   nu = 5, etas=[1], ws=[6, 14, 23])
+assert key2d_previous(ke, 23, 3) == (21, 1)   , "previous test 1"
+assert key2d_previous(ke, 21, 1) == (21, 0)   , "previous test 2"
+assert key2d_previous(ke, 21, 0) == (19, 2)   , "previous test 3"
+assert key2d_previous(ke, 19, 2) == (18, 3)   , "previous test 4"
